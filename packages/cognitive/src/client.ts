@@ -30,20 +30,42 @@ export class Cognitive {
     response: new InterceptorManager<Response>(),
   }
 
-  private _client: ExtendedClient
-  private _preferences: ModelPreferences | null = null
-  private _provider: ModelProvider
+  protected _models: Model[] = []
+  protected _timeoutMs: number = 5 * 60 * 1000 // Default timeout of 5 minutes
+  protected _maxRetries: number = 5 // Default max retries
+  protected _client: ExtendedClient
+  protected _preferences: ModelPreferences | null = null
+  protected _provider: ModelProvider
+  protected _downtimes: ModelPreferences['downtimes'] = []
+
   private _events = createNanoEvents<Events>()
-  private _downtimes: ModelPreferences['downtimes'] = []
-  private _models: Model[] = []
 
   public constructor(props: CognitiveProps) {
     this._client = getExtendedClient(props.client)
     this._provider = props.provider ?? new RemoteModelProvider(props.client)
+    this._timeoutMs = props.timeout ?? this._timeoutMs
+    this._maxRetries = props.maxRetries ?? this._maxRetries
   }
 
   public get client(): ExtendedClient {
     return this._client
+  }
+
+  public clone(): Cognitive {
+    const copy = new Cognitive({
+      client: this._client.clone(),
+      provider: this._provider,
+      timeout: this._timeoutMs,
+      maxRetries: this._maxRetries,
+    })
+
+    copy._models = [...this._models]
+    copy._preferences = this._preferences ? { ...this._preferences } : null
+    copy._downtimes = [...this._downtimes]
+    copy.interceptors.request = this.interceptors.request
+    copy.interceptors.response = this.interceptors.response
+
+    return copy
   }
 
   public on<K extends keyof Events>(this: this, event: K, cb: Events[K]): Unsubscribe {
@@ -130,7 +152,6 @@ export class Cognitive {
     const { integration, model: modelName } = await this._selectModel(model)
     const def = this._models.find((m) => m.integration === integration && (m.name === modelName || m.id === modelName))
     if (!def) {
-      console.info('Models:', this._models)
       throw new Error(`Model ${modelName} not found`)
     }
 
@@ -140,13 +161,15 @@ export class Cognitive {
   public async generateContent(input: InputProps): Promise<Response> {
     const start = Date.now()
 
-    const signal = input.signal ?? AbortSignal.timeout(30_000)
+    const signal = input.signal ?? AbortSignal.timeout(this._timeoutMs)
 
     const client = this._client.abortable(signal)
 
     let props: Request = { input }
     let integration: string
     let model: string
+
+    this._events.emit('request', props)
 
     const { output, meta } = await backOff<{
       output: GenerateContentOutput
@@ -173,11 +196,11 @@ export class Cognitive {
           if (signal?.aborted) {
             // We don't want to retry if the request was aborted
             this._events.emit('aborted', props, err)
+            signal.throwIfAborted()
             return false
           }
 
-          if (_attempt > 3) {
-            // We don't want to retry more than 3 times
+          if (_attempt > this._maxRetries) {
             this._events.emit('error', props, err)
             return false
           }

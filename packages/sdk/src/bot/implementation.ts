@@ -1,4 +1,5 @@
 import type { Server } from 'node:http'
+import { PLUGIN_PREFIX_SEPARATOR } from '../consts'
 import { BasePlugin, PluginImplementation } from '../plugin'
 import { serve } from '../serve'
 import * as utils from '../utils'
@@ -45,10 +46,12 @@ export class BotImplementation<TBot extends BaseBot = BaseBot, TPlugins extends 
     before_incoming_message: {},
     before_outgoing_message: {},
     before_outgoing_call_action: {},
+    before_incoming_call_action: {},
     after_incoming_event: {},
     after_incoming_message: {},
     after_outgoing_message: {},
     after_outgoing_call_action: {},
+    after_incoming_call_action: {},
   }
   private _workflowHandlers: OrderedWorkflowHandlersMap<any> = {
     started: {},
@@ -75,8 +78,12 @@ export class BotImplementation<TBot extends BaseBot = BaseBot, TPlugins extends 
             return action
           }
 
-          for (const plugin of Object.values(this._plugins)) {
-            action = plugin.actionHandlers[actionName]
+          for (const [pluginAlias, plugin] of Object.entries(this._plugins)) {
+            const [actionPrefix, nameWithoutPrefix] = actionName.split(PLUGIN_PREFIX_SEPARATOR)
+            if (actionPrefix !== pluginAlias || !nameWithoutPrefix) {
+              continue
+            }
+            action = plugin.actionHandlers[nameWithoutPrefix]
             if (action) {
               return action
             }
@@ -276,6 +283,19 @@ export class BotImplementation<TBot extends BaseBot = BaseBot, TPlugins extends 
         { handler: handler as HookHandlers<any>['before_outgoing_call_action'][string], order: this._registerOrder++ }
       )
     },
+    /**
+     * # EXPERIMENTAL
+     * This API is experimental and may change in the future.
+     */
+    beforeIncomingCallAction: <T extends utils.types.StringKeys<HookHandlersMap<TBot>['before_incoming_call_action']>>(
+      type: T,
+      handler: HookHandlers<TBot>['before_incoming_call_action'][T]
+    ) => {
+      this._hookHandlers.before_incoming_call_action[type] = utils.arrays.safePush(
+        this._hookHandlers.before_incoming_call_action[type],
+        { handler: handler as HookHandlers<any>['before_incoming_call_action'][string], order: this._registerOrder++ }
+      )
+    },
     afterIncomingEvent: <T extends utils.types.StringKeys<HookHandlersMap<TBot>['after_incoming_event']>>(
       type: T,
       handler: HookHandlers<TBot>['after_incoming_event'][T]
@@ -310,6 +330,20 @@ export class BotImplementation<TBot extends BaseBot = BaseBot, TPlugins extends 
       this._hookHandlers.after_outgoing_call_action[type] = utils.arrays.safePush(
         this._hookHandlers.after_outgoing_call_action[type],
         { handler: handler as HookHandlers<any>['after_outgoing_call_action'][string], order: this._registerOrder++ }
+      )
+    },
+
+    /**
+     * # EXPERIMENTAL
+     * This API is experimental and may change in the future.
+     */
+    afterIncomingCallAction: <T extends utils.types.StringKeys<HookHandlersMap<TBot>['after_incoming_call_action']>>(
+      type: T,
+      handler: HookHandlers<TBot>['after_incoming_call_action'][T]
+    ) => {
+      this._hookHandlers.after_incoming_call_action[type] = utils.arrays.safePush(
+        this._hookHandlers.after_incoming_call_action[type],
+        { handler: handler as HookHandlers<any>['after_incoming_call_action'][string], order: this._registerOrder++ }
       )
     },
 

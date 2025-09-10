@@ -1,6 +1,7 @@
 import * as sdk from '@botpress/sdk'
 import * as fslib from 'fs'
 import * as pathlib from 'path'
+import semver from 'semver'
 import * as apiUtils from '../api'
 import * as codegen from '../code-generation'
 import type commandDefinitions from '../command-definitions'
@@ -113,6 +114,22 @@ export class AddCommand extends GlobalCommand<AddCommandDefinition> {
       await this._uninstall(installPath)
     }
 
+    if (ref.type === 'name' && ref.version === pkgRef.LATEST_TAG) {
+      // If the semver version expression is 'latest', we assume the project
+      // is compatible with all versions of the latest major:
+      const major = semver.major(targetPackage.pkg.version)
+      targetPackage.pkg.version = `>=${major}.0.0 <${major + 1}.0.0`
+
+      this.logger.log(
+        `Dependency "${packageName}" will be installed with version "${targetPackage.pkg.version}". ` +
+          `To pin a specific version or version range, please change "${targetPackage.type}:${packageName}@latest" ` +
+          'to a specific version number or range instead of "latest".'
+      )
+    } else if (ref.type === 'name') {
+      // Preserve the semver version expression in the generated code:
+      targetPackage.pkg.version = ref.version
+    }
+
     let files: codegen.File[]
     if (targetPackage.type === 'integration') {
       files = await codegen.generateIntegrationPackage(targetPackage.pkg)
@@ -131,23 +148,25 @@ export class AddCommand extends GlobalCommand<AddCommandDefinition> {
   private async _findRemotePackage(ref: pkgRef.ApiPackageRef): Promise<InstallablePackage | undefined> {
     const api = await this.ensureLoginAndCreateClient(this.argv)
     if (this._pkgCouldBe(ref, 'integration')) {
-      const integration = await api.findIntegration(ref)
+      const integration = await api.findPublicOrPrivateIntegration(ref)
       if (integration) {
         const { name, version } = integration
         return { type: 'integration', pkg: { integration, name, version } }
       }
     }
     if (this._pkgCouldBe(ref, 'interface')) {
-      const intrface = await api.findPublicInterface(ref)
+      const intrface = await api.findPublicOrPrivateInterface(ref)
       if (intrface) {
         const { name, version } = intrface
         return { type: 'interface', pkg: { interface: intrface, name, version } }
       }
     }
     if (this._pkgCouldBe(ref, 'plugin')) {
-      const plugin = await api.findPublicPlugin(ref)
+      const plugin = await api.findPublicOrPrivatePlugin(ref)
       if (plugin) {
-        const { code } = await api.client.getPluginCode({ id: plugin.id, platform: 'node' })
+        const { code } = plugin.public
+          ? await api.client.getPublicPluginCode({ id: plugin.id, platform: 'node' })
+          : await api.client.getPluginCode({ id: plugin.id, platform: 'node' })
         const { name, version } = plugin
         return {
           type: 'plugin',
@@ -211,10 +230,11 @@ export class AddCommand extends GlobalCommand<AddCommandDefinition> {
         )
       }
 
-      const { name, version } = projectDefinition.definition
+      const pluginDefinition = projectDefinition.definition
+      const { name, version } = pluginDefinition
       const code = projectImplementation
 
-      const createPluginReqBody = await apiUtils.prepareCreatePluginBody(projectDefinition.definition)
+      const createPluginReqBody = await apiUtils.prepareCreatePluginBody(pluginDefinition)
       return {
         type: 'plugin',
         pkg: {
@@ -226,19 +246,13 @@ export class AddCommand extends GlobalCommand<AddCommandDefinition> {
             ...createPluginReqBody,
             dependencies: {
               interfaces: await utils.promises.awaitRecord(
-                utils.records.mapValues(
-                  projectDefinition.definition.interfaces ?? {},
-                  apiUtils.prepareCreateInterfaceBody
-                )
+                utils.records.mapValues(pluginDefinition.interfaces ?? {}, apiUtils.prepareCreateInterfaceBody)
               ),
               integrations: await utils.promises.awaitRecord(
-                utils.records.mapValues(
-                  projectDefinition.definition.integrations ?? {},
-                  apiUtils.prepareCreateIntegrationBody
-                )
+                utils.records.mapValues(pluginDefinition.integrations ?? {}, apiUtils.prepareCreateIntegrationBody)
               ),
             },
-            recurringEvents: projectDefinition.definition.recurringEvents,
+            recurringEvents: pluginDefinition.recurringEvents,
           },
         },
       }

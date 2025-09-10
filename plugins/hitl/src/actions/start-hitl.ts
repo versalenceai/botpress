@@ -1,11 +1,12 @@
 import * as sdk from '@botpress/sdk'
 import { DEFAULT_HITL_HANDOFF_MESSAGE } from '../../plugin.definition'
+import * as configuration from '../configuration'
 import * as conv from '../conv-manager'
 import * as user from '../user-linker'
 import * as bp from '.botpress'
 
-type StartHitlInput = bp.interfaces.hitl.actions.startHitl.input.Input
-type MessageHistoryElement = NonNullable<StartHitlInput['messageHistory']>[number]
+type StartHitlInput = bp.actions.startHitl.input.Input
+type MessageHistoryElement = NonNullable<bp.interfaces.hitl.actions.startHitl.input.Input['messageHistory']>[number]
 type Props = Parameters<bp.PluginProps['actions']['startHitl']>[0]
 
 export const startHitl: bp.PluginProps['actions']['startHitl'] = async (props) => {
@@ -42,7 +43,12 @@ export const startHitl: bp.PluginProps['actions']['startHitl'] = async (props) =
     return {}
   }
 
-  await _sendHandoffMessage(props, upstreamCm)
+  const sessionConfig = await configuration.configureNewHitlSession({
+    ...props,
+    upstreamConversationId,
+    configurationOverrides: props.input.configurationOverrides,
+  })
+  await _sendHandoffMessage(upstreamCm, sessionConfig)
 
   const users = new user.UserLinker(props)
   const downstreamUserId = await users.getDownstreamUserId(upstreamUserId, { email: upstreamUserEmail })
@@ -60,14 +66,20 @@ export const startHitl: bp.PluginProps['actions']['startHitl'] = async (props) =
   await _linkConversations(props, upstreamConversationId, downstreamConversationId)
   await _saveStartMessageId(props, lastMessageByUser)
   await _activateHitl(upstreamCm, downstreamCm)
-  await _startHitlTimeout(props, upstreamCm, downstreamCm, upstreamUserId)
+  await _startHitlTimeout(props, upstreamCm, downstreamCm, upstreamUserId, sessionConfig)
 
   return {}
 }
 
-const _sendHandoffMessage = (props: Props, upstreamCm: conv.ConversationManager): Promise<void> =>
+const _sendHandoffMessage = (
+  upstreamCm: conv.ConversationManager,
+  sessionConfig: bp.configuration.Configuration
+): Promise<void> =>
   upstreamCm.respond({
-    text: props.configuration.onHitlHandoffMessage ?? DEFAULT_HITL_HANDOFF_MESSAGE,
+    type: 'text',
+    text: sessionConfig.onHitlHandoffMessage?.length
+      ? sessionConfig.onHitlHandoffMessage
+      : DEFAULT_HITL_HANDOFF_MESSAGE,
   })
 
 const _buildMessageHistory = async (
@@ -110,6 +122,7 @@ const _createDownstreamConversation = async (
   const { conversationId: downstreamConversationId } = await props.actions.hitl.startHitl({
     title: input.title,
     description: input.description,
+    hitlSession: input.hitlSession,
     userId: downstreamUserId,
     messageHistory,
   })
@@ -140,24 +153,25 @@ const _startHitlTimeout = async (
   props: Props,
   upstreamCm: conv.ConversationManager,
   downstreamCm: conv.ConversationManager,
-  upstreamUserId: string
+  upstreamUserId: string,
+  sessionConfig: bp.configuration.Configuration
 ) => {
-  const { agentAssignedTimeoutSeconds } = props.configuration
+  const { agentAssignedTimeoutSeconds } = sessionConfig
 
   if (!agentAssignedTimeoutSeconds) {
     return
   }
 
-  await props.client.createEvent({
-    type: 'humanAgentAssignedTimeout',
-    payload: {
-      sessionStartedAt: new Date().toISOString(),
-      downstreamConversationId: downstreamCm.conversationId,
-    },
-    conversationId: upstreamCm.conversationId,
-    userId: upstreamUserId,
-    schedule: { delay: agentAssignedTimeoutSeconds * 1000 },
-  })
+  await props.events.humanAgentAssignedTimeout
+    .withConversationId(upstreamCm.conversationId)
+    .withUserId(upstreamUserId)
+    .schedule(
+      {
+        sessionStartedAt: new Date().toISOString(),
+        downstreamConversationId: downstreamCm.conversationId,
+      },
+      { delay: agentAssignedTimeoutSeconds * 1000 }
+    )
 }
 
 /**

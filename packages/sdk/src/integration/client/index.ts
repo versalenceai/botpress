@@ -12,6 +12,15 @@ export class IntegrationSpecificClient<TIntegration extends common.BaseIntegrati
 {
   public constructor(private readonly _client: client.Client) {}
 
+  /**
+   * Access the underlying Botpress client.
+   * This is useful for operations that are not available in the IntegrationSpecificClient.
+   * You probably shouldn't use this directly if you don't know what you're doing.
+   */
+  public get _inner(): client.Client {
+    return this._client
+  }
+
   public createConversation: types.CreateConversation<TIntegration> = ((x) =>
     this._client.createConversation(x)) as types.CreateConversation<TIntegration>
   public getConversation: types.GetConversation<TIntegration> = ((x) =>
@@ -45,9 +54,9 @@ export class IntegrationSpecificClient<TIntegration extends common.BaseIntegrati
   public getOrCreateMessage: types.GetOrCreateMessage<TIntegration> = ((x) =>
     this._client.getOrCreateMessage(x)) as types.GetOrCreateMessage<TIntegration>
   public getMessage: types.GetMessage<TIntegration> = ((x) =>
-    this._client.getMessage(x)) as types.GetMessage<TIntegration>
+    this._client.getMessage(x).then((r) => r)) as types.GetMessage<TIntegration>
   public updateMessage: types.UpdateMessage<TIntegration> = ((x) =>
-    this._client.updateMessage(x)) as types.UpdateMessage<TIntegration>
+    this._client.updateMessage(x).then((r) => r)) as types.UpdateMessage<TIntegration>
   public listMessages: types.ListMessages<TIntegration> = ((x) =>
     this._client.listMessages(x)) as types.ListMessages<TIntegration>
   public deleteMessage: types.DeleteMessage<TIntegration> = ((x) =>
@@ -78,4 +87,5 @@ export class IntegrationSpecificClient<TIntegration extends common.BaseIntegrati
   public listFiles: types.ListFiles<TIntegration> = (x) => this._client.listFiles(x)
   public getFile: types.GetFile<TIntegration> = (x) => this._client.getFile(x)
   public updateFileMetadata: types.UpdateFileMetadata<TIntegration> = (x) => this._client.updateFileMetadata(x)
+  public trackAnalytics: types.TrackAnalytics<TIntegration> = (x) => this._client.trackAnalytics(x)
 }

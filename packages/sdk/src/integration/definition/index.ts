@@ -40,6 +40,8 @@ export type IntegrationDefinitionProps<
   icon?: string
   readme?: string
 
+  attributes?: Record<string, string>
+
   identifier?: {
     extractScript?: string
     fallbackHandlerScript?: string
@@ -76,6 +78,7 @@ export type IntegrationDefinitionProps<
 
   __advanced?: {
     esbuild?: Partial<esbuild.BuildOptions>
+    extraOperations?: Record<string, { enabled: boolean }>
   }
 }
 
@@ -100,12 +103,12 @@ type ChannelsOfPackage<TPackage extends InterfacePackage> = {
 }
 
 export type ActionOverrideProps = utils.types.AtLeastOneProperty<
-  Pick<Required<ActionDefinition>, 'title' | 'description' | 'billable' | 'cacheable'> & {
+  Pick<Required<ActionDefinition>, 'title' | 'description' | 'billable' | 'cacheable' | 'attributes'> & {
     name: string
   }
 >
 export type EventOverrideProps = utils.types.AtLeastOneProperty<
-  Pick<Required<EventDefinition>, 'title' | 'description'> & {
+  Pick<Required<EventDefinition>, 'title' | 'description' | 'attributes'> & {
     name: string
   }
 >
@@ -198,6 +201,8 @@ export class IntegrationDefinition<
   public readonly entities: this['props']['entities']
   public readonly interfaces: this['props']['interfaces']
   public readonly __advanced: this['props']['__advanced']
+  public readonly attributes: this['props']['attributes']
+
   public constructor(
     public readonly props: IntegrationDefinitionProps<
       TName,
@@ -229,6 +234,7 @@ export class IntegrationDefinition<
     this.entities = props.entities
     this.interfaces = props.interfaces
     this.__advanced = props.__advanced
+    this.attributes = props.attributes
   }
 
   public extend<P extends InterfacePackage>(
@@ -328,7 +334,7 @@ export class IntegrationDefinition<
         schema: mergeObjectSchemas(a.input.schema, b.input.schema),
       },
       output: {
-        schema: mergeObjectSchemas(a.input.schema, b.output.schema),
+        schema: mergeObjectSchemas(a.output.schema, b.output.schema),
       },
     }
   }

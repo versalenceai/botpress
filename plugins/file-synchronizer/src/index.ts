@@ -15,11 +15,6 @@ const plugin = new bp.Plugin({
   },
 })
 
-plugin.on.event('periodicSync', async (props) => {
-  props.logger.info('Periodic sync event triggered')
-  await hooks.onEvent.periodicSync.handleEvent(props)
-})
-
 plugin.on.event('files-readonly:fileCreated', async (props) => {
   props.logger.info('File created event triggered', props.event.payload.file)
   await hooks.onEvent.fileCreated.handleEvent(props)
@@ -43,6 +38,21 @@ plugin.on.event('files-readonly:folderDeletedRecursive', async (props) => {
 plugin.on.event('files-readonly:aggregateFileChanges', async (props) => {
   props.logger.info('Aggregate file changes event triggered', props.event.payload.modifiedItems)
   await hooks.onEvent.aggregateFileChanges.handleEvent(props)
+})
+
+plugin.on.workflowStart('buildQueue', async (props) => {
+  props.logger.info('buildQueue workflow started', props.workflow.tags)
+  await hooks.onWorkflowStart.buildQueue.handleEvent(props)
+})
+
+plugin.on.workflowContinue('buildQueue', async (props) => {
+  props.logger.info('buildQueue workflow continued', props.workflow.tags)
+  await hooks.onWorkflowContinue.buildQueue.handleEvent(props)
+})
+
+plugin.on.workflowTimeout('buildQueue', async (props) => {
+  props.logger.info('buildQueue workflow timed out', props.workflow.tags)
+  await hooks.onWorkflowTimeout.buildQueue.handleEvent(props)
 })
 
 plugin.on.workflowStart('processQueue', async (props) => {

@@ -1,16 +1,7 @@
 import * as client from '@botpress/client'
 import * as utils from '../../utils/type-utils'
 import * as common from '../common'
-import {
-  EnumerateMessages,
-  ConversationTags,
-  GetChannelByName,
-  GetMessageByName,
-  MessageTags,
-  WithOptionalPrefix,
-  WithRequiredPrefix,
-  TagsOfMessage,
-} from './sub-types'
+import { EnumerateMessages, ConversationTags, GetChannelByName, GetMessageByName, MessageTags } from './sub-types'
 
 type Arg<F extends (...args: any[]) => any> = Parameters<F>[number]
 type Res<F extends (...args: any[]) => any> = ReturnType<F>
@@ -85,7 +76,7 @@ type EventResponse<TIntegration extends common.BaseIntegration, TEvent extends k
   event: utils.Merge<
     Awaited<Res<client.Client['getEvent']>>['event'],
     {
-      type: WithRequiredPrefix<utils.Cast<TEvent, string>, TIntegration['name']>
+      type: utils.Cast<TEvent, string>
       payload: TIntegration['events'][TEvent]
     }
   >
@@ -95,7 +86,7 @@ export type CreateEvent<TIntegration extends common.BaseIntegration> = <TEvent e
   x: utils.Merge<
     Arg<client.Client['createEvent']>,
     {
-      type: WithOptionalPrefix<utils.Cast<TEvent, string>, TIntegration['name']>
+      type: utils.Cast<TEvent, string>
       payload: TIntegration['events'][TEvent]
     }
   >
@@ -111,7 +102,7 @@ export type ListEvents<TIntegration extends common.BaseIntegration> = (
   x: utils.Merge<
     Arg<client.Client['listEvents']>,
     {
-      type?: WithRequiredPrefix<utils.Cast<keyof TIntegration['events'], string>, TIntegration['name']>
+      type?: utils.Cast<keyof TIntegration['events'], string>
     }
   >
 ) => Res<client.Client['listEvents']>
@@ -121,12 +112,8 @@ type MessageResponse<
   TMessage extends keyof EnumerateMessages<TIntegration> = keyof EnumerateMessages<TIntegration>,
 > = {
   message: utils.Merge<
-    Awaited<Res<client.Client['createMessage']>>['message'],
-    {
-      type: utils.Cast<TMessage, string>
-      payload: GetMessageByName<TIntegration, TMessage>['payload']
-      tags: common.ToTags<TagsOfMessage<TIntegration, TMessage>>
-    }
+    Awaited<Res<client.Client['getMessage']>>['message'],
+    utils.Cast<EnumerateMessages<TIntegration>[TMessage], object>
   >
 }
 
@@ -302,6 +289,7 @@ export type DeleteFile<_TIntegration extends common.BaseIntegration> = client.Cl
 export type ListFiles<_TIntegration extends common.BaseIntegration> = client.Client['listFiles']
 export type GetFile<_TIntegration extends common.BaseIntegration> = client.Client['getFile']
 export type UpdateFileMetadata<_TIntegration extends common.BaseIntegration> = client.Client['updateFileMetadata']
+export type TrackAnalytics<_TIntegration extends common.BaseIntegration> = client.Client['trackAnalytics']
 
 export type ClientOperations<TIntegration extends common.BaseIntegration> = {
   createConversation: CreateConversation<TIntegration>
@@ -340,6 +328,7 @@ export type ClientOperations<TIntegration extends common.BaseIntegration> = {
   listFiles: ListFiles<TIntegration>
   getFile: GetFile<TIntegration>
   updateFileMetadata: UpdateFileMetadata<TIntegration>
+  trackAnalytics: TrackAnalytics<TIntegration>
 }
 
 export type ClientInputs<TIntegration extends common.BaseIntegration> = {

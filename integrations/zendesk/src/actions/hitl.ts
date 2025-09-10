@@ -1,22 +1,45 @@
+import { buildConversationTranscript } from '@botpress/common'
 import * as sdk from '@botpress/sdk'
-import { getZendeskClient } from '../client'
+import { getZendeskClient, type ZendeskClient } from '../client'
 import * as bp from '.botpress'
 
 export const startHitl: bp.IntegrationProps['actions']['startHitl'] = async (props) => {
   const { ctx, input, client } = props
-  const zendeskClient = getZendeskClient(ctx.configuration)
+
+  const downstreamBotpressUser = await client.getUser({ id: ctx.botUserId })
+  const chatbotName = input.hitlSession?.chatbotName ?? downstreamBotpressUser.user.name ?? 'Botpress'
+  const chatbotPhotoUrl =
+    input.hitlSession?.chatbotPhotoUrl ??
+    downstreamBotpressUser.user.pictureUrl ??
+    'https://app.botpress.dev/favicon/bp.svg'
 
   const { user } = await client.getUser({
     id: input.userId,
   })
+
   const zendeskAuthorId = user.tags.id
+
   if (!zendeskAuthorId) {
     throw new sdk.RuntimeError(`User ${user.id} not linked in Zendesk`)
   }
 
-  const ticket = await zendeskClient.createTicket(input.title ?? 'Untitled Ticket', await _buildTicketBody(props), {
-    id: zendeskAuthorId,
+  const zendeskClient = getZendeskClient(ctx.configuration)
+  await _updateZendeskBotpressUser(props, {
+    zendeskClient,
+    chatbotName,
+    chatbotPhotoUrl,
   })
+
+  const ticket = await zendeskClient.createTicket(
+    input.title ?? 'Untitled Ticket',
+    await _buildTicketBody(props, { chatbotName }),
+    {
+      id: zendeskAuthorId,
+    },
+    {
+      priority: input.hitlSession?.priority,
+    }
+  )
 
   const zendeskTicketId = `${ticket.id}`
   const { conversation } = await client.getOrCreateConversation({
@@ -35,46 +58,35 @@ export const startHitl: bp.IntegrationProps['actions']['startHitl'] = async (pro
   }
 }
 
-const _buildTicketBody = async ({ input, client, ctx }: bp.ActionProps['startHitl']) => {
-  const description = input.description?.trim() || 'Someone opened a ticket using your Botpress chatbot.'
+const _updateZendeskBotpressUser = async (
+  { client, ctx }: bp.ActionProps['startHitl'],
+  {
+    zendeskClient,
+    chatbotName,
+    chatbotPhotoUrl,
+  }: { zendeskClient: ZendeskClient; chatbotName: string; chatbotPhotoUrl: string }
+) => {
+  await client.updateUser({
+    id: ctx.botUserId,
+    pictureUrl: chatbotPhotoUrl,
+    name: chatbotName,
+  })
 
-  const messageHistory = (
-    await Promise.all(
-      input.messageHistory
-        // NOTE: currently, the hitl plugin only supports text messages
-        ?.filter((message) => message.type === 'text')
-        .map(async (message) => {
-          const { payload, source } = message
-          const user = await _getBotpressUser({
-            userId: source.type === 'user' ? source.userId : ctx.botUserId,
-            client,
-          })
-          const userTags = user.tags as Record<string, string>
-          const author = userTags['name'] ?? user.name ?? (source.type === 'bot' ? 'Botpress' : 'Unknown User')
-          const authorIcon = source.type === 'bot' ? '🤖' : '👤'
-
-          return `${authorIcon} ${author}:\n> ${payload.text}`
-        }) ?? []
-    )
-  ).join('\n\n---\n\n')
-
-  return description + (messageHistory.length ? `\n\n---\n\n${messageHistory}` : '')
+  await zendeskClient.createOrUpdateUser({
+    external_id: ctx.botUserId,
+    name: chatbotName,
+    remote_photo_url: chatbotPhotoUrl,
+  })
 }
 
-type User = bp.ClientResponses['getUser']['user']
-const _USERS_CACHE = new Map<string, User>()
+const _buildTicketBody = async (
+  { input, client, ctx }: bp.ActionProps['startHitl'],
+  { chatbotName }: { chatbotName: string }
+) => {
+  const description = input.description?.trim() || `Someone opened a ticket using your ${chatbotName} chatbot.`
+  const messageHistory = await buildConversationTranscript({ client, ctx, messages: input.messageHistory })
 
-const _getBotpressUser = async ({ userId, client }: { userId: string; client: bp.Client }): Promise<User> => {
-  const cachedUser = _USERS_CACHE.get(userId)
-
-  if (cachedUser) {
-    return cachedUser
-  }
-
-  const { user } = await client.getUser({ id: userId })
-  _USERS_CACHE.set(userId, user)
-
-  return user
+  return description + (messageHistory.length ? `\n\n---\n\n${messageHistory}` : '')
 }
 
 export const stopHitl: bp.IntegrationProps['actions']['stopHitl'] = async ({ ctx, input, client }) => {
@@ -90,12 +102,7 @@ export const stopHitl: bp.IntegrationProps['actions']['stopHitl'] = async ({ ctx
   const zendeskClient = getZendeskClient(ctx.configuration)
 
   try {
-    const originalTicket = await zendeskClient.getTicket(ticketId)
     await zendeskClient.updateTicket(ticketId, {
-      comment: {
-        body: input.reason,
-        author_id: originalTicket.requester_id,
-      },
       status: 'closed',
     })
     return {}

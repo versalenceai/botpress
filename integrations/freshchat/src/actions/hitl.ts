@@ -1,4 +1,6 @@
 import { RuntimeError } from '@botpress/client'
+import { buildConversationTranscript } from '@botpress/common'
+import { AxiosError } from 'axios'
 import { getFreshchatClient } from 'src/client'
 import * as bp from '.botpress'
 
@@ -51,26 +53,15 @@ export const startHitl: bp.IntegrationProps['actions']['startHitl'] = async ({ c
       message_parts: [
         {
           text: {
-            content: `Transcript:
-            ${
-              messageHistory
-                ?.map((message) => {
-                  let text = ''
-
-                  if (message.type !== 'text') {
-                    text = `(Event: ${message.type})`
-                  } else {
-                    text = message.payload.text
-                  }
-
-                  const origin =
-                    message.source.type === 'bot' ? 'Bot: ' : message.source.userId === user.id ? 'User: ' : ''
-
-                  return `${origin}${text}`
-                })
-                .join('\n') || '-'
-            }
-          `,
+            content:
+              'Transcript:\n\n' +
+              (await buildConversationTranscript({
+                ctx,
+                client,
+                messages: messageHistory,
+                customTranscriptFormatter: (msgs) =>
+                  msgs.map((msg) => (msg.isBot ? 'Bot: ' : 'User: ') + msg.text.join('\n')).join('\n\n'),
+              })),
           },
         },
       ],
@@ -84,6 +75,7 @@ export const startHitl: bp.IntegrationProps['actions']['startHitl'] = async ({ c
       userId: user.tags.id as string,
       messages,
       channelId,
+      priority: input.hitlSession?.priority,
     })
 
     const { conversation } = await client.getOrCreateConversation({
@@ -115,11 +107,12 @@ export const stopHitl: bp.IntegrationProps['actions']['stopHitl'] = async ({ ctx
 
   const freshchatClient = getFreshchatClient({ ...ctx.configuration }, logger)
 
-  void freshchatClient.sendMessage(
-    null,
-    freshchatConversationId,
-    'Botpress HITL terminated with reason: ' + input.reason
-  )
+  try {
+    await freshchatClient.setConversationAsResolved(freshchatConversationId)
+  } catch (thrown: unknown) {
+    const error: AxiosError = thrown instanceof AxiosError ? thrown : new AxiosError(String(thrown))
+    logger.forBot().error('Error resolving HITL conversation on Freshchat: ' + error.message, error?.response?.data)
+  }
 
   return {}
 }
@@ -129,37 +122,23 @@ export const createUser: bp.IntegrationProps['actions']['createUser'] = async ({
   try {
     const freshchatClient = getFreshchatClient({ ...ctx.configuration }, logger)
 
-    const { name, email, pictureUrl } = input
+    const { user: botpressUser } = await client.getOrCreateUser({
+      ...input,
+      tags: {
+        email: input.email,
+      },
+    })
 
-    if (!email) {
-      logger.forBot().error('Email necessary for HITL')
-      throw new RuntimeError('Email necessary for HITL')
-    }
-
-    let freshchatUser = await freshchatClient.getUserByEmail(email)
-
-    // Create a user on the agent handoff platform
-    if (!freshchatUser) {
-      logger.forBot().info(`User with email ${email} not Found on Freshchat, creating a new one`)
-
-      freshchatUser = await freshchatClient.createUser({
-        email,
-        first_name: name,
-        reference_id: email,
-      })
-    }
+    const freshchatUser = await freshchatClient.getOrCreateUser({ ...input, botpressUserId: botpressUser.id })
 
     if (!freshchatUser.id) {
-      logger.forBot().error('Failed to create/get Freshchat User')
-      throw new RuntimeError('Failed to create/get Freshchat User')
+      throw new RuntimeError('Failed to create Freshchat User')
     }
 
-    // Create a user on Botpress
-    const { user: botpressUser } = await client.getOrCreateUser({
-      name,
-      pictureUrl,
+    await client.updateUser({
+      ...input,
+      id: botpressUser.id,
       tags: {
-        // Link the Botpress user with the user on the agent handoff platform
         id: freshchatUser.id,
       },
     })

@@ -3,7 +3,6 @@ import { type GenerateContentInput, type GenerateContentOutput } from './schemas
 
 export type BotpressClientLike = {
   callAction(...params: any): Promise<any>
-  config: any
   constructor: Function
 }
 
@@ -44,6 +43,10 @@ export type Response = {
 export type CognitiveProps = {
   client: BotpressClientLike
   provider?: ModelProvider
+  /** Timeout in milliseconds */
+  timeout?: number
+  /** Max retry attempts */
+  maxRetries?: number
 }
 
 export type Events = {

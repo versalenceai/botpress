@@ -1,8 +1,8 @@
 import * as sdk from '@botpress/sdk'
 import type * as models from '../../definitions/models'
-import { MAX_FILE_SIZE_BYTES } from '../consts'
 import type * as types from '../types'
 import { processQueueFile } from './file-processor'
+import { findBatchEndCursor } from './queue-batching'
 
 export type ProcessQueueProps = {
   syncQueue: Readonly<types.SyncQueue>
@@ -17,15 +17,28 @@ export type ProcessQueueProps = {
     transferFileToBotpress: (params: {
       file: models.FileWithPath
       fileKey: string
+      shouldIndex: boolean
     }) => Promise<{ botpressFileId: string }>
   }
   updateSyncQueue: (props: { syncQueue: types.SyncQueue }) => Promise<unknown>
 }
 
 export const processQueue = async (props: ProcessQueueProps) => {
+  // Short-circuit if the sync queue is empty:
+  if (!props.syncQueue?.length) {
+    props.logger.info('Sync queue is empty. Nothing to process.')
+    return { finished: 'all' } as const
+  }
+
   const syncQueue = structuredClone(props.syncQueue) as types.SyncQueue
   const startCursor = syncQueue.findIndex((file) => file.status === 'pending') ?? syncQueue.length - 1
-  const endCursor = _findBatchEndCursor(startCursor, syncQueue)
+
+  if (startCursor < 0) {
+    props.logger.info('No files left to process in the sync queue.')
+    return { finished: 'all' } as const
+  }
+
+  const { endCursor } = findBatchEndCursor({ startCursor, files: syncQueue })
   const filesInBatch = syncQueue.slice(startCursor, endCursor)
 
   for (const fileToSync of filesInBatch) {
@@ -40,26 +53,4 @@ export const processQueue = async (props: ProcessQueueProps) => {
   }
 
   return { finished: 'all' } as const
-}
-
-const _findBatchEndCursor = (startCursor: number, filesToSync: types.SyncQueue) => {
-  const maxBatchSize = MAX_FILE_SIZE_BYTES
-
-  let currentBatchSize = 0
-
-  for (let newCursor = startCursor; newCursor < filesToSync.length; newCursor++) {
-    const fileToSync = filesToSync[newCursor]!
-
-    if (fileToSync.sizeInBytes === undefined) {
-      continue
-    }
-
-    currentBatchSize += fileToSync.sizeInBytes
-
-    if (currentBatchSize > maxBatchSize) {
-      return newCursor
-    }
-  }
-
-  return filesToSync.length
 }

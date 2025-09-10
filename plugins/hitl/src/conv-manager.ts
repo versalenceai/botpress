@@ -5,11 +5,6 @@ type HitlState = bp.states.hitl.Hitl['payload']
 
 const DEFAULT_STATE: HitlState = { hitlActive: false }
 
-export type RespondProps = {
-  text: string
-  userId?: string
-}
-
 export const HITL_END_REASON = {
   // PATIENT_LEFT: 'patient-left',
   PATIENT_USED_TERMINATION_COMMAND: 'patient-used-termination-command',
@@ -62,28 +57,28 @@ export class ConversationManager {
   }
 
   public async continueWorkflow(): Promise<void> {
-    await this._props.client.createEvent({
-      type: 'continueWorkflow',
+    await this._props.events.continueWorkflow.withConversationId(this._convId).emit({
       conversationId: this._convId,
-      payload: {
-        conversationId: this._convId,
-      } satisfies bp.events.continueWorkflow.ContinueWorkflow,
     })
   }
 
-  public async respond({ text, userId }: RespondProps): Promise<void> {
+  public async respond({ type, ...messagePayload }: types.MessagePayload): Promise<void> {
     await this._props.client.createMessage({
+      // FIXME: in the future, we should use the provided UserId so that messages
+      //        on Botpress appear to come from the agent/user instead of the
+      //        bot user. For now, this is not possible because of checks in the
+      //        backend.
+      type,
       userId: this._props.ctx.botId,
       conversationId: this._convId,
-      type: 'text',
-      payload: { text, userId },
+      payload: messagePayload,
       tags: {},
     })
   }
 
   public async abortHitlSession(errorMessage: string): Promise<void> {
     await this.setHitlInactive(HITL_END_REASON.INTERNAL_ERROR)
-    await this.respond({ text: errorMessage })
+    await this.respond({ type: 'text', text: errorMessage })
   }
 
   private async _getHitlState(): Promise<bp.states.hitl.Hitl['payload']> {

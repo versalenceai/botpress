@@ -35,7 +35,7 @@ We love contributions from the community!
 
 We welcome pull requests and issues relevant for any code contained in this repository. See the [This Repository](#this-repository) section for more details.
 
-For bugs or features related to the API, Botpress Dashboard or the Botpress Studio, please talk to us on [Discord](https://discord.gg/botpress) instead!
+For bugs or features related to Botpress Cloud, you may create an issue on this repository, but keep in mind that you will get a faster response by talking to us on [Discord](https://discord.gg/botpress) instead!
 
 For any problem related to on-premise Botpress v12, please see the [Botpress v12 repository](https://github.com/botpress/v12).
 
@@ -93,7 +93,7 @@ The [`/bots`](./bots) folder contains examples of bots "_as code_" made only usi
 
 However it can be useful for experienced developers who want to build bots in a more programmatic way.
 
-It is also used internally by the Botress team since the Studio and SDK both use the same underlying primitives.
+It is also used internally by the Botpress team since the Studio and SDK both use the same underlying primitives.
 
 ## Plugins
 

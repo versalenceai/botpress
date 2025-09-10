@@ -5,7 +5,10 @@ export type EnumerateMessages<TIntegration extends common.BaseIntegration> = uti
   utils.ValueOf<{
     [TChannelName in keyof TIntegration['channels']]: {
       [TMessageName in keyof TIntegration['channels'][TChannelName]['messages']]: {
-        tags: TIntegration['channels'][TChannelName]['message']['tags']
+        type: TMessageName
+        tags: {
+          [Tag in keyof TIntegration['channels'][TChannelName]['message']['tags']]?: string
+        }
         payload: TIntegration['channels'][TChannelName]['messages'][TMessageName]
       }
     }
@@ -23,6 +26,7 @@ export type GetMessageByName<
 > = utils.Cast<
   EnumerateMessages<TIntegration>[TMessageName],
   {
+    type: string
     tags: Record<string, any>
     payload: any
   }
@@ -44,17 +48,3 @@ export type TagsOfMessage<
   TIntegration extends common.BaseIntegration,
   TMessageName extends keyof EnumerateMessages<TIntegration>,
 > = keyof utils.UnionToIntersection<GetMessageByName<TIntegration, TMessageName>['tags']>
-
-/**
- * @deprecated Integration's should no longer use their name as prefix for event types or tags.
- */
-export type WithRequiredPrefix<TTags extends string, TPrefix extends string> = string extends TTags
-  ? string
-  : utils.Join<[TPrefix, ':', TTags]>
-
-/**
- * @deprecated Integration's should no longer use their name as prefix for event types or tags.
- */
-export type WithOptionalPrefix<TTags extends string, TPrefix extends string> =
-  | TTags
-  | WithRequiredPrefix<TTags, TPrefix>
